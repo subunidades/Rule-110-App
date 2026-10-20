@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rule 110</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0a0a0f;
+    --surface:   #111118;
+    --border:    #1e1e2e;
+    --cell-on:   #e8d5ff;
+    --cell-off:  #0d0d16;
+    --accent:    #9b5de5;
+    --accent2:   #f15bb5;
+    --accent3:   #00f5d4;
+    --dim:       #3a3a5c;
+    --text:      #c8c8e8;
+    --text-dim:  #5a5a7a;
+    --mono:      'Space Mono', monospace;
+    --sans:      'Inter', sans-serif;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+  }
+
+  /* ── Layout ── */
+  #app {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    height: 100dvh;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  header h1 {
+    font-family: var(--mono);
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--cell-on);
+  }
+  header h1 span { color: var(--accent); }
+  .tagline {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    flex: 1;
+  }
+  .header-actions {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+  }
+
+  /* ── Canvas area ── */
+  #canvas-wrap {
+    position: relative;
+    overflow: hidden;
+    cursor: crosshair;
+    background: var(--cell-off);
+  }
+  #canvas-wrap canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+  }
+
+  /* Generation counter overlay */
+  #gen-display {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    color: var(--text-dim);
+    pointer-events: none;
+    line-height: 1.6;
+    text-align: right;
+  }
+  #gen-display strong { color: var(--accent3); font-size: 0.9rem; }
+
+  /* Rule bits overlay */
+  #rule-vis {
+    position: absolute;
+    top: 10px;
+    left: 12px;
+    pointer-events: none;
+  }
+  .rule-cases {
+    display: flex;
+    gap: 5px;
+  }
+  .rule-case {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    opacity: 0.85;
+  }
+  .rule-case-bits {
+    display: flex;
+    gap: 1px;
+  }
+  .rc-bit {
+    width: 7px; height: 7px;
+    border-radius: 1px;
+  }
+  .rc-bit.on  { background: var(--cell-on); }
+  .rc-bit.off { background: var(--dim); }
+  .rc-out {
+    width: 7px; height: 7px;
+    border-radius: 1px;
+    margin-top: 1px;
+  }
+  .rc-out.on  { background: var(--accent); }
+  .rc-out.off { background: var(--cell-off); border: 1px solid var(--dim); }
+  .rc-label {
+    font-family: var(--mono);
+    font-size: 0.45rem;
+    color: var(--text-dim);
+  }
+
+  /* Click-to-edit hint */
+  #hint {
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    pointer-events: none;
+    white-space: nowrap;
+    transition: opacity 0.5s;
+  }
+
+  /* ── Controls panel ── */
+  #controls {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 8px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .ctrl-row-top {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    align-items: flex-end;
+  }
+
+  .ctrl-row-bottom {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+
+  #stats {
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    color: var(--text-dim);
+    margin-left: auto;
+  }
+  #stats span { color: var(--text); }
+
+  @media (max-width: 768px) {
+    .tagline { display: none; }
+    header { padding: 8px 12px; gap: 0.75rem; justify-content: space-between; }
+  }
+
+  .ctrl-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .ctrl-label {
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .ctrl-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  /* Buttons */
+  button {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    padding: 5px 12px;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    white-space: nowrap;
+  }
+  button:hover { background: var(--border); color: var(--cell-on); }
+  button.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  button.danger { border-color: #5a1a1a; color: #c06060; }
+  button.danger:hover { background: #5a1a1a; color: #ffaaaa; }
+  button:disabled { opacity: 0.35; cursor: default; pointer-events: none; }
+  button:focus-visible { outline: 2px solid var(--accent3); outline-offset: 2px; }
+
+  /* ── Transport (play / pause) ── */
+  .transport {
+    width: 44px; height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--accent);
+    color: var(--bg);
+    box-shadow: inset 0 0 0 0 var(--accent), 0 0 0 0 transparent;
+    transition: transform 0.12s, box-shadow 0.2s, background 0.2s, color 0.2s;
+  }
+  .transport svg { width: 22px; height: 22px; }
+    .transport .ico-pause { display: none; }
+  .transport:hover  { transform: scale(1.06); background: var(--accent); color: var(--bg); }
+  .transport:active { transform: scale(0.96); }
+
+  /* running: hollow ring + pause bars */
+  .transport.active {
+    background: transparent;
+    color: var(--accent);
+    box-shadow: inset 0 0 0 2px var(--accent), 0 0 14px -2px var(--accent);
+  }
+  .transport.active .ico-play  { display: none; }
+  .transport.active .ico-pause { display: block; }
+  .transport.active:hover { background: transparent; color: var(--accent); }
+
+  /* segmented secondary controls */
+  .seg {
+    display: flex;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .seg button { border: 0; border-radius: 0; padding: 8px 12px; }
+  .seg button + button { border-left: 1px solid var(--border); }
+
+  /* Range slider */
+  input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 2px;
+    background: var(--dim);
+    outline: none;
+    border-radius: 1px;
+    cursor: pointer;
+    width: 90px;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+  }
+  .range-val {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    color: var(--accent3);
+    min-width: 28px;
+  }
+
+  /* Rule number input */
+  #rule-input {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--accent);
+    padding: 4px 8px;
+    border-radius: 3px;
+    width: 60px;
+    text-align: center;
+    outline: none;
+  }
+  #rule-input:focus { border-color: var(--accent); }
+
+  /* Seed presets */
+  .seed-btn {
+    font-size: 0.65rem;
+    padding: 4px 8px;
+  }
+
+  /* Color themes */
+  .theme-dot {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: border-color 0.15s;
+  }
+  .theme-dot:hover, .theme-dot.active { border-color: var(--cell-on); }
+
+  /* Divider */
+  .divider {
+    width: 1px;
+    height: 28px;
+    background: var(--border);
+    align-self: center;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <h1>RULE <span id="rule-title">110</span></h1>
+    <div class="tagline">elementary cellular automaton · turing complete · wolfram 2002</div>
+    <div class="header-actions">
+      <button id="btn-play" class="transport" aria-label="Run" aria-pressed="false">
+        <svg class="ico-play" viewBox="0 0 24 24"><path transform="translate(-2.25 0)" d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" fill="currentColor"/></svg>
+        <svg class="ico-pause" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"/></svg>
+      </button>
+      <div class="seg">
+        <button id="btn-step">STEP</button>
+        <button id="btn-reset">RESET</button>
+        <button class="danger" id="btn-clear">CLEAR</button>
+      </div>
+    </div>
+  </header>
+
+  <div id="canvas-wrap">
+    <canvas id="ca-canvas"></canvas>
+    <div id="gen-display">
+      <div>GEN <strong id="gen-num">0</strong></div>
+      <div id="density-display">DENSITY —</div>
+    </div>
+    <div id="rule-vis"></div>
+    <div id="hint">click tape to toggle cells · scroll to zoom</div>
+  </div>
+
+  <div id="controls">
+    <div class="ctrl-row-top">
+      <div class="ctrl-group">
+        <div class="ctrl-label">Rule</div>
+        <div class="ctrl-row">
+          <input type="number" id="rule-input" min="0" max="255" value="110">
+          <button id="btn-rand-rule">RND</button>
+        </div>
+      </div>
+      <div class="ctrl-group">
+        <div class="ctrl-label">Speed</div>
+        <div class="ctrl-row">
+          <input type="range" id="speed-slider" min="1" max="60" value="12">
+          <span class="range-val" id="speed-val">12 fps</span>
+        </div>
+      </div>
+      <div class="ctrl-group">
+        <div class="ctrl-label">Cell Size</div>
+        <div class="ctrl-row">
+          <input type="range" id="cell-slider" min="1" max="12" value="3">
+          <span class="range-val" id="cell-val">3 px</span>
+        </div>
+      </div>
+      <div class="ctrl-group">
+        <div class="ctrl-label">Mode</div>
+        <div class="ctrl-row">
+          <button id="btn-wrap" class="active">WRAP</button>
+          <button id="btn-scroll">SCROLL</button>
+        </div>
+      </div>
+      <div class="ctrl-group">
+        <div class="ctrl-label">Color</div>
+        <div class="ctrl-row" id="theme-picker"></div>
+      </div>
+    </div>
+    <div class="ctrl-row-bottom">
+      <div class="ctrl-label">Seed</div>
+      <button class="seed-btn" id="seed-single">SINGLE</button>
+      <button class="seed-btn" id="seed-random">RANDOM</button>
+      <button class="seed-btn" id="seed-alt">STRIPE</button>
+      <button class="seed-btn" id="seed-block">BLOCK</button>
+      <div id="stats">
+        <span id="stat-cells">—</span> cells · <span id="stat-alive">—</span> alive
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Themes ─────────────────────────────────────────────
+const THEMES = [
+  { name:'violet', on:'#e8d5ff', off:'#0d0d16', accent:'#9b5de5' },
+  { name:'matrix', on:'#00ff41', off:'#001100', accent:'#00cc33' },
+  { name:'amber',  on:'#ffb347', off:'#120800', accent:'#ff8c00' },
+  { name:'ice',    on:'#a8edff', off:'#010d12', accent:'#00b4d8' },
+  { name:'rose',   on:'#ffd6e0', off:'#12000a', accent:'#f15bb5' },
+  { name:'mono',   on:'#ffffff', off:'#000000', accent:'#888888' },
+];
+const THEME_HEX = ['#9b5de5','#00ff41','#ffb347','#00b4d8','#f15bb5','#888888'];
+
+let theme = THEMES[0];
+
+// ── State ──────────────────────────────────────────────
+const canvas = document.getElementById('ca-canvas');
+const ctx    = canvas.getContext('2d');
+const wrap   = document.getElementById('canvas-wrap');
+
+let rule       = 110;
+let cellSize   = 3;
+let fps        = 12;
+let running    = false;
+let wrapEdge   = true;
+let scrollMode = false;
+let generation = 0;
+let rafId      = null;
+let lastTime   = 0;
+
+let cols = 0, rows = 0;
+let tape = [];       // current generation
+let history = [];    // array of Uint8Arrays, one per visible row
+let offscreenBuffer = null;
+
+// ── Rule helpers ────────────────────────────────────────
+function getRuleBit(left, center, right) {
+  const idx = (left << 2) | (center << 1) | right;
+  return (rule >> idx) & 1;
+}
+
+function step(tape) {
+  const n = tape.length;
+  const next = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    const l = wrapEdge ? tape[(i - 1 + n) % n] : (i > 0 ? tape[i-1] : 0);
+    const c = tape[i];
+    const r = wrapEdge ? tape[(i + 1) % n]     : (i < n-1 ? tape[i+1] : 0);
+    next[i] = getRuleBit(l, c, r);
+  }
+  return next;
+}
+
+// ── Canvas & resize ─────────────────────────────────────
+let initialized = false;
+function resize() {
+  const w = wrap.clientWidth;
+  const h = wrap.clientHeight;
+  if (!w || !h) return;
+  canvas.width  = Math.floor(w / cellSize) * cellSize;
+  canvas.height = Math.floor(h / cellSize) * cellSize;
+  cols = Math.floor(canvas.width  / cellSize);
+  rows = Math.floor(canvas.height / cellSize);
+
+  if (!initialized) {
+    initialized = true;
+    seedSingle();
+    return;
+  }
+
+  // rebuild history to fit new dimensions
+  const newHistory = [];
+  const offset = history.length - rows;
+  for (let r = 0; r < rows; r++) {
+    const srcIdx = offset + r;
+    const old = (srcIdx >= 0 && srcIdx < history.length) ? history[srcIdx] : null;
+    if (old) {
+      const row = new Uint8Array(cols);
+      for (let c = 0; c < Math.min(old.length, cols); c++) row[c] = old[c];
+      newHistory.push(row);
+    } else {
+      newHistory.push(new Uint8Array(cols));
+    }
+  }
+  history = newHistory;
+  tape = history.length > 0 ? new Uint8Array(history[history.length - 1]) : new Uint8Array(cols);
+  redraw();
+  updateStats();
+}
+
+// ── Drawing ─────────────────────────────────────────────
+function redraw() {
+  ctx.fillStyle = theme.off;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = theme.on;
+  const n = Math.min(history.length, rows);
+  const startRow = history.length >= rows ? 0 : rows - history.length;
+  for (let r = 0; r < n; r++) {
+    const row = history[history.length - n + r];
+    if (!row) continue;
+    const y = (startRow + r) * cellSize;
+    for (let c = 0; c < cols; c++) {
+      if (row[c]) {
+        ctx.fillRect(c * cellSize, y, cellSize, cellSize);
+      }
+    }
+  }
+
+  // highlight current row with subtle tint
+  if (rows > 1 && history.length > 0) {
+    ctx.fillStyle = theme.accent + '22';
+    ctx.fillRect(0, (rows - 1) * cellSize, canvas.width, cellSize);
+  }
+}
+
+function drawCell(col, val) {
+  if (rows <= 0 || col < 0 || col >= cols) return;
+  ctx.fillStyle = val ? theme.on : theme.off;
+  ctx.fillRect(col * cellSize, (rows - 1) * cellSize, cellSize, cellSize);
+}
+
+// ── Advance one generation ───────────────────────────────
+function advance() {
+  if (!cols || !rows) return;
+  const next = step(tape);
+  tape = next;
+  generation++;
+
+  // always keep history in sync regardless of render mode
+  history.push(new Uint8Array(tape));
+  if (history.length > rows) history.shift();
+
+  if (scrollMode) {
+    // shift canvas up by one row using pixel blit (fast path)
+    if (canvas.height > cellSize) {
+      const imageData = ctx.getImageData(0, cellSize, canvas.width, canvas.height - cellSize);
+      ctx.putImageData(imageData, 0, 0);
+    }
+    // draw new row at bottom
+    ctx.fillStyle = theme.off;
+    ctx.fillRect(0, (rows - 1) * cellSize, canvas.width, cellSize);
+    ctx.fillStyle = theme.on;
+    for (let c = 0; c < cols; c++) {
+      if (tape[c]) ctx.fillRect(c * cellSize, (rows - 1) * cellSize, cellSize, cellSize);
+    }
+    // highlight
+    ctx.fillStyle = theme.accent + '18';
+    ctx.fillRect(0, (rows - 1) * cellSize, canvas.width, cellSize);
+  } else {
+    redraw();
+  }
+
+  document.getElementById('gen-num').textContent = generation;
+  // density
+  const alive = tape.reduce((s,v)=>s+v, 0);
+  document.getElementById('density-display').textContent =
+    'DENSITY ' + (alive / cols * 100).toFixed(1) + '%';
+  document.getElementById('stat-alive').textContent = alive;
+}
+
+// ── Animation loop ──────────────────────────────────────
+function loop(ts) {
+  if (!running) return;
+  const interval = 1000 / fps;
+  if (ts - lastTime >= interval) {
+    advance();
+    lastTime = ts;
+  }
+  rafId = requestAnimationFrame(loop);
+}
+
+function setPlayUI(on) {
+  const b = document.getElementById('btn-play');
+  b.classList.toggle('active', on);
+  b.setAttribute('aria-pressed', on);
+  b.setAttribute('aria-label', on ? 'Pause' : 'Run');
+  document.getElementById('btn-step').disabled = on;
+}
+
+function startRun() {
+  running = true;
+  setPlayUI(true);
+  lastTime = performance.now();
+  rafId = requestAnimationFrame(loop);
+}
+
+function pauseRun() {
+  running = false;
+  setPlayUI(false);
+  if (rafId) cancelAnimationFrame(rafId);
+}
+
+// ── Seeds ────────────────────────────────────────────────
+function setSeed(fn) {
+  pauseRun();
+  generation = 0;
+  document.getElementById('gen-num').textContent = '0';
+  tape = new Uint8Array(cols);
+  fn(tape, cols);
+  history = [new Uint8Array(tape)];
+  redraw();
+  updateStats();
+}
+
+function seedSingle()  { setSeed((t,n)=>{ t[Math.floor(n/2)] = 1; }); }
+function seedRandom()  { setSeed((t,n)=>{ for(let i=0;i<n;i++) t[i]=Math.random()<0.5?1:0; }); }
+function seedAlt()     { setSeed((t,n)=>{ for(let i=0;i<n;i++) t[i]=i%2; }); }
+function seedBlock()   { setSeed((t,n)=>{ const c=Math.floor(n/2); const r=Math.min(10,Math.floor(n/4)); for(let i=Math.max(0,c-r);i<Math.min(n,c+r);i++) t[i]=1; }); }
+
+// ── Rule visualization ──────────────────────────────────
+function buildRuleVis() {
+  const vis = document.getElementById('rule-vis');
+  vis.innerHTML = '';
+  const div = document.createElement('div');
+  div.className = 'rule-cases';
+  for (let p = 7; p >= 0; p--) {
+    const out = (rule >> p) & 1;
+    const caseDiv = document.createElement('div');
+    caseDiv.className = 'rule-case';
+    const bits = document.createElement('div');
+    bits.className = 'rule-case-bits';
+    for (let b = 2; b >= 0; b--) {
+      const dot = document.createElement('div');
+      dot.className = 'rc-bit ' + ((p >> b & 1) ? 'on' : 'off');
+      bits.appendChild(dot);
+    }
+    const outDot = document.createElement('div');
+    outDot.className = 'rc-out ' + (out ? 'on' : 'off');
+    const label = document.createElement('div');
+    label.className = 'rc-label';
+    label.textContent = p;
+    caseDiv.appendChild(bits);
+    caseDiv.appendChild(outDot);
+    caseDiv.appendChild(label);
+    div.appendChild(caseDiv);
+  }
+  vis.appendChild(div);
+  document.getElementById('rule-title').textContent = rule;
+  document.getElementById('rule-input').value = rule;
+}
+
+// ── Stats ────────────────────────────────────────────────
+function updateStats() {
+  document.getElementById('stat-cells').textContent = cols;
+  const alive = tape.reduce((s,v)=>s+v,0);
+  document.getElementById('stat-alive').textContent = alive;
+  document.getElementById('density-display').textContent =
+    'DENSITY ' + (cols > 0 ? (alive/cols*100).toFixed(1) : '0.0') + '%';
+}
+
+// ── Theme picker ─────────────────────────────────────────
+function buildThemePicker() {
+  const picker = document.getElementById('theme-picker');
+  THEMES.forEach((t, i) => {
+    const dot = document.createElement('div');
+    dot.className = 'theme-dot' + (i === 0 ? ' active' : '');
+    dot.style.background = THEME_HEX[i];
+    dot.title = t.name;
+    dot.addEventListener('click', () => {
+      theme = t;
+      document.querySelectorAll('.theme-dot').forEach(d=>d.classList.remove('active'));
+      dot.classList.add('active');
+      document.documentElement.style.setProperty('--cell-on',  t.on);
+      document.documentElement.style.setProperty('--cell-off', t.off);
+      document.documentElement.style.setProperty('--accent',   t.accent);
+      redraw();
+    });
+    picker.appendChild(dot);
+  });
+}
+
+// ── Canvas click: toggle cells on current row ────────────
+let painting = false;
+let paintVal = 1;
+
+canvas.addEventListener('mousedown', e => {
+  painting = true;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const col = Math.floor((e.clientX - rect.left) * scaleX / cellSize);
+  if (col < 0 || col >= cols) return;
+  paintVal = tape[col] ? 0 : 1;
+  tape[col] = paintVal;
+  if (history.length > 0) history[history.length - 1][col] = paintVal;
+  drawCell(col, paintVal);
+  updateStats();
+});
+
+canvas.addEventListener('mousemove', e => {
+  if (!painting) return;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const col = Math.floor((e.clientX - rect.left) * scaleX / cellSize);
+  if (col < 0 || col >= cols) return;
+  if (tape[col] === paintVal) return;
+  tape[col] = paintVal;
+  if (history.length > 0) history[history.length - 1][col] = paintVal;
+  drawCell(col, paintVal);
+  updateStats();
+});
+
+window.addEventListener('mouseup', () => { painting = false; });
+
+// ── Touch support (iPad / mobile) ───────────────────────
+function getTouchCol(touch) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  return Math.floor((touch.clientX - rect.left) * scaleX / cellSize);
+}
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  painting = true;
+  const col = getTouchCol(e.touches[0]);
+  if (col < 0 || col >= cols) return;
+  paintVal = tape[col] ? 0 : 1;
+  tape[col] = paintVal;
+  if (history.length > 0) history[history.length - 1][col] = paintVal;
+  drawCell(col, paintVal);
+  updateStats();
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (!painting) return;
+  const col = getTouchCol(e.touches[0]);
+  if (col < 0 || col >= cols) return;
+  if (tape[col] === paintVal) return;
+  tape[col] = paintVal;
+  if (history.length > 0) history[history.length - 1][col] = paintVal;
+  drawCell(col, paintVal);
+  updateStats();
+}, { passive: false });
+
+canvas.addEventListener('touchend',   () => { painting = false; });
+canvas.addEventListener('touchcancel',() => { painting = false; });
+
+// Scroll to zoom
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? 1 : -1;
+  const slider = document.getElementById('cell-slider');
+  const newVal = Math.max(1, Math.min(12, parseInt(slider.value) + delta));
+  slider.value = newVal;
+  cellSize = newVal;
+  document.getElementById('cell-val').textContent = newVal + ' px';
+  resize();
+}, { passive: false });
+
+// ── Keyboard shortcuts ───────────────────────────────────
+window.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === ' ') { e.preventDefault(); running ? pauseRun() : startRun(); }
+  if (e.key === 'ArrowRight' || e.key === 'n') advance();
+  if (e.key === 'r') { pauseRun(); seedSingle(); }
+  if (e.key === 'R') { rule = Math.floor(Math.random()*256); buildRuleVis(); seedSingle(); }
+});
+
+// ── Control bindings ─────────────────────────────────────
+document.getElementById('btn-play').addEventListener('click', () => {
+  running ? pauseRun() : startRun();
+});
+document.getElementById('btn-step').addEventListener('click', () => {
+  pauseRun(); advance();
+});
+document.getElementById('btn-reset').addEventListener('click', () => {
+  pauseRun(); seedSingle();
+});
+document.getElementById('btn-clear').addEventListener('click', () => {
+  pauseRun();
+  generation = 0;
+  document.getElementById('gen-num').textContent = '0';
+  tape = new Uint8Array(cols);
+  history = [new Uint8Array(cols)];
+  redraw(); updateStats();
+});
+
+document.getElementById('speed-slider').addEventListener('input', e => {
+  fps = parseInt(e.target.value);
+  document.getElementById('speed-val').textContent = fps + ' fps';
+});
+document.getElementById('cell-slider').addEventListener('input', e => {
+  cellSize = parseInt(e.target.value);
+  document.getElementById('cell-val').textContent = cellSize + ' px';
+  resize();
+});
+
+let ruleInputTimer = null;
+document.getElementById('rule-input').addEventListener('input', e => {
+  clearTimeout(ruleInputTimer);
+  ruleInputTimer = setTimeout(() => {
+    let v = parseInt(e.target.value);
+    if (isNaN(v) || e.target.value.trim() === '') return; // wait for more typing
+    v = Math.max(0, Math.min(255, v));
+    e.target.value = v;
+    rule = v;
+    buildRuleVis();
+    if (!running) { generation = 0; document.getElementById('gen-num').textContent = '0'; }
+  }, 400);
+});
+// Also apply on blur so leaving the field always commits
+document.getElementById('rule-input').addEventListener('blur', e => {
+  clearTimeout(ruleInputTimer);
+  let v = parseInt(e.target.value);
+  if (isNaN(v)) v = 110;
+  v = Math.max(0, Math.min(255, v));
+  e.target.value = v;
+  rule = v;
+  buildRuleVis();
+  if (!running) { generation = 0; document.getElementById('gen-num').textContent = '0'; }
+});
+
+document.getElementById('btn-rand-rule').addEventListener('click', () => {
+  rule = Math.floor(Math.random() * 256);
+  buildRuleVis();
+});
+
+document.getElementById('seed-single').addEventListener('click', seedSingle);
+document.getElementById('seed-random').addEventListener('click', seedRandom);
+document.getElementById('seed-alt').addEventListener('click', seedAlt);
+document.getElementById('seed-block').addEventListener('click', seedBlock);
+
+// wrap / scroll mode
+const btnWrap   = document.getElementById('btn-wrap');
+const btnScroll = document.getElementById('btn-scroll');
+btnWrap.addEventListener('click', () => {
+  wrapEdge = true; scrollMode = false;
+  btnWrap.classList.add('active'); btnScroll.classList.remove('active');
+  redraw();
+});
+btnScroll.addEventListener('click', () => {
+  wrapEdge = false; scrollMode = true;
+  btnScroll.classList.add('active'); btnWrap.classList.remove('active');
+  redraw();
+});
+
+// ── Hint fade ────────────────────────────────────────────
+setTimeout(() => {
+  const h = document.getElementById('hint');
+  h.style.opacity = '0';
+}, 4000);
+
+// ── Init ─────────────────────────────────────────────────
+buildThemePicker();
+buildRuleVis();
+
+// resize() owns initialization: on first ResizeObserver fire it sets
+// initialized=true and calls seedSingle(), so no manual inline block needed.
+const ro = new ResizeObserver(() => resize());
+ro.observe(wrap);
+</script>
+</body>
+</html>
